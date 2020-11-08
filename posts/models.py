@@ -29,6 +29,9 @@ class Post(models.Model):
         blank=True,
         related_name="posts")
 
+    # поле для картинки
+    image = models.ImageField(upload_to='posts/', blank=True, null=True)
+
     class Meta:
         ordering = ['-pub_date']
 

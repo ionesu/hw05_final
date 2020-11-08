@@ -21,7 +21,7 @@
                   </div>
                 {% endfor %}
 
-                <form method="post" action="{% if selected_pos %}{% url 'post_edit' user.username post.pk %}{% else %}{% url 'new_post' %}{% endif %}">
+                <form method="post" enctype="multipart/form-data" action="{% if selected_pos %}{% url 'post_edit' user.username post.pk %}{% else %}{% url 'new_post' %}{% endif %}">
                     {% csrf_token %}
 
                     {% for field in form %}

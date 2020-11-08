@@ -5,11 +5,12 @@ from .models import Post
 class PostForm(forms.ModelForm):
     class Meta:
         model = Post
-        fields = ('group', 'text')
+        fields = ('group', 'text', 'image')
         labels = {'text': 'Введите текст', 'group': 'Выберите группу'}
         help_texts = {
                       'text': 'Введите здесь текст вашего поста',
-                      'group': 'Выберите группу для вашего поста'
+                      'group': 'Выберите группу для вашего поста',
+                      'image': 'Загрузите картинку для вашего поста'
                      }
 
     def clean_text(self):
