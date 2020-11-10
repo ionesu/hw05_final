@@ -1,8 +1,9 @@
 # posts/tests.py
 
+import tempfile
 from django.contrib.auth import get_user_model
-from django.test import TestCase, Client
-from posts.models import Post, Group
+from django.test import Client, TestCase, override_settings
+from posts.models import Post, Group, Comment, Follow
 from django.urls import reverse
 from urllib.parse import urljoin
 
@@ -14,7 +15,7 @@ class BlogTests(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.user = User.objects.create_user(username='StasBasov')
+        cls.user = User.objects.create_user(username='IvanSushkov')
         cls.authorized_client = Client()
         cls.authorized_client.force_login(cls.user)
         cls.unauthorized_client = Client()
@@ -137,3 +138,89 @@ class BlogTests(TestCase):
                     self.text,
                     self.edit
                     )
+
+    def test_404(self):
+        response = self.authorized_client.get("/some_trouble_url/")
+        self.assertEqual(response.status_code, 404)
+        self.assertTemplateUsed(response, "misc/404.html")
+
+    def test_cache(self):
+        with self.assertNumQueries(3):
+            response = self.authorized_client.get(reverse("index"))
+            self.assertEqual(response.status_code, 200)
+            response = self.authorized_client.get(reverse("index"))
+            self.assertEqual(response.status_code, 200)
+
+    def test_check_follow_auth(self):
+        follower = User.objects.create_user(
+            username="follower",
+             password="12345"
+             )
+        self.authorized_client.post(reverse(
+            "profile_follow", kwargs={"username": follower.username, }))
+        follow = Follow.objects.first()
+        self.assertEqual(Follow.objects.count(), 1)
+        self.assertEqual(follow.author, follower)
+        self.assertEqual(follow.user, self.user)
+
+    def test_check_follow_non_unauth(self):
+        follower = User.objects.create_user(
+            username="follower",
+            password="12345"
+            )
+        self.unauthorized_client.post(reverse(
+            "profile_follow", kwargs={"username": follower.username, }))
+        self.assertEqual(follower.following.count(), 0)
+
+    def test_check_unfollow(self):
+
+        follower = User.objects.create_user(
+            username="follower", 
+            password="12345"
+            )
+        Follow.objects.create(user=self.user, author=follower)
+        self.authorized_client.post(reverse(
+            "profile_unfollow", kwargs={"username": follower.username, }))
+        self.assertEqual(follower.following.count(), 0)
+
+    def test_auth_user_can_comment(self):
+        self.author = User.objects.create(
+            username="leo",
+            password="123456"
+            )
+        self.post = Post.objects.create(
+            text="Test post!",
+            author=self.author
+            )
+        response = self.authorized_client.post(reverse(
+            "add_comment", kwargs={
+                "username": self.author, 
+                "post_id": self.post.id
+                }),
+            data={"text": "Test comment", "author": self.user}, follow=True, )
+        self.assertEqual(response.status_code, 200)
+        self.comment = Comment.objects.last()
+        self.assertEqual(Comment.objects.count(), 1)
+        self.assertEqual(self.comment.text, "Test comment")
+
+    def test_non_auth_user_can_comment(self):
+        self.author = User.objects.create(
+            username="leo", 
+            password="123456"
+            )
+        self.post = Post.objects.create(
+            text="Test post!", 
+            author=self.user
+            )
+        response = self.unauthorized_client.post(reverse(
+            "add_comment", kwargs={
+                "username": self.user.username, 
+                "post_id": self.post.id
+                }),
+            data={
+                "text": "Test comment", 
+                "author": self.user.id, 
+                "post": self.post.id
+                })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Comment.objects.count(), 0)                
