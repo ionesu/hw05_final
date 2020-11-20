@@ -35,7 +35,7 @@ class Post(models.Model):
         upload_to='posts/',
         blank=True,
         null=True
-        )
+    )
 
     class Meta:
         ordering = ['-pub_date']
@@ -43,9 +43,12 @@ class Post(models.Model):
     def __str__(self):
         return self.text
 
+
 class Comment(models.Model):
-    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="comments")
-    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="user")
+    post = models.ForeignKey(
+        Post, on_delete=models.CASCADE, related_name="comments")
+    author = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="user")
     text = models.TextField()
     created = models.DateTimeField("date published", auto_now_add=True)
 
@@ -56,10 +59,16 @@ class Comment(models.Model):
         ordering = ["created"]
 
 
-
 class Follow(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="follower")
-    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="following")
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="follower")
+    author = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="following")
 
     class Meta:
-        unique_together = ("user", "author")
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'author'],
+                name='unique_together'
+            )
+        ]

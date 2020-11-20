@@ -1,11 +1,12 @@
-# posts/tests.py
-
-import tempfile
+from io import BytesIO
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth import get_user_model
-from django.test import Client, TestCase, override_settings
+from django.test import Client, TestCase
 from posts.models import Post, Group, Comment, Follow
 from django.urls import reverse
 from urllib.parse import urljoin
+from django.core.cache import cache
+from django.core.cache.utils import make_template_fragment_key
 
 User = get_user_model()
 
@@ -23,7 +24,7 @@ class BlogTests(TestCase):
             title='test group',
             slug='test_group',
             description='Тестовое описание для тестового поста.'
-            )
+        )
         cls.text = 'Тестовый текст!'
         cls.edit = 'Измененный тестовый текст!'
 
@@ -47,7 +48,7 @@ class BlogTests(TestCase):
             '/new/',
             {'text': 'Это текст публикации'},
             follow=True
-            )
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Post.objects.count(), current_posts_count + 1)
 
@@ -63,7 +64,7 @@ class BlogTests(TestCase):
             '/auth/login/?next=/new/',
             status_code=302,
             target_status_code=200
-            )
+        )
 
     def check_post_content(self, url, user, group, text, new_text):
         self.authorized_client.get(url)
@@ -88,7 +89,7 @@ class BlogTests(TestCase):
             self.group,
             self.text,
             self.edit
-            )
+        )
 
     def test_new_post_unauthorized_user(self):
         response = self.unauthorized_client.post(
@@ -114,7 +115,7 @@ class BlogTests(TestCase):
                     self.group,
                     self.text,
                     self.edit
-                    )
+                )
 
     def test_edit_post(self):
         post = Post.objects.create(
@@ -137,25 +138,69 @@ class BlogTests(TestCase):
                     self.group,
                     self.text,
                     self.edit
-                    )
+                )
 
     def test_404(self):
         response = self.authorized_client.get("/some_trouble_url/")
         self.assertEqual(response.status_code, 404)
         self.assertTemplateUsed(response, "misc/404.html")
 
-    def test_cache(self):
-        with self.assertNumQueries(3):
-            response = self.authorized_client.get(reverse("index"))
-            self.assertEqual(response.status_code, 200)
-            response = self.authorized_client.get(reverse("index"))
-            self.assertEqual(response.status_code, 200)
+    def test_index_cache_key(self):
+        key = make_template_fragment_key('index_page', [1])
+        self.authorized_client.get('/')
+        self.assertTrue(bool(cache.get(key)),
+                        'нет данных в кеше под ключом "index_page"')
+        cache.clear()
+        self.assertFalse(bool(cache.get(key)), 'кеш не очищен')
+
+    def test_index_cache(self):
+        response = self.authorized_client.get('/')
+        self.authorized_client.post(
+            '/new/', {'text': 'Тестовый текст кеш поста.'})
+        response = self.authorized_client.get('/')
+        self.assertNotContains(
+            response,
+            'Тестовый текст кеш поста.',
+            msg_prefix="index page not cached")
+        cache.clear()
+        response = self.authorized_client.get('/')
+        self.assertContains(
+            response,
+            'Тестовый текст кеш поста.',
+            msg_prefix="кеш очищен - пост не на главной странице")
+
+    def test_image_on_pages(self):
+        post = Post.objects.create(text="Post with image",
+                                   group=self.group,
+                                   author=self.user)
+        img = BytesIO(
+            b'GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00ccc,\x00'
+            b'\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;')
+        image_name = 'foo_image.gif'
+        img = SimpleUploadedFile(
+            image_name, img.read(), content_type='image/gif')
+        response = self.authorized_client.post(
+            reverse("post_edit",
+                    kwargs={"username": self.user.username,
+                            "post_id": post.id}),
+            data={"text": "Post with image",
+                  "image": img}, follow=True)
+        for url in self.urls():
+            with self.subTest(url=url):
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, "test_id")
+
+    def test_non_image(self):
+        with open("posts/urls.py") as file:
+            response = self.authorized_client.post(
+                "/new/", {"text": "Some text", "image": file}, follow=True)
+            self.assertNotContains(response, "test_id")
 
     def test_check_follow_auth(self):
         follower = User.objects.create_user(
             username="follower",
-             password="12345"
-             )
+            password="12345"
+        )
         self.authorized_client.post(reverse(
             "profile_follow", kwargs={"username": follower.username, }))
         follow = Follow.objects.first()
@@ -167,60 +212,70 @@ class BlogTests(TestCase):
         follower = User.objects.create_user(
             username="follower",
             password="12345"
-            )
+        )
         self.unauthorized_client.post(reverse(
             "profile_follow", kwargs={"username": follower.username, }))
-        self.assertEqual(follower.following.count(), 0)
+        self.assertFalse(Follow.objects.filter(
+            user=follower,
+            author=self.user
+            ).exists(),
+            "Follow object was not deleted")
 
     def test_check_unfollow(self):
 
         follower = User.objects.create_user(
-            username="follower", 
+            username="follower",
             password="12345"
-            )
+        )
         Follow.objects.create(user=self.user, author=follower)
         self.authorized_client.post(reverse(
             "profile_unfollow", kwargs={"username": follower.username, }))
         self.assertEqual(follower.following.count(), 0)
 
+    def test_check_follower_not_see_followed_post(self):
+        response = self.authorized_client.get('/follow/')
+        self.assertNotIn(
+            self.text, response.context['page'],
+            "author not followed, but their post appears on /follow/")
+
     def test_auth_user_can_comment(self):
         self.author = User.objects.create(
             username="leo",
             password="123456"
-            )
+        )
         self.post = Post.objects.create(
             text="Test post!",
             author=self.author
-            )
+        )
         response = self.authorized_client.post(reverse(
             "add_comment", kwargs={
-                "username": self.author, 
+                "username": self.author,
                 "post_id": self.post.id
-                }),
+            }),
             data={"text": "Test comment", "author": self.user}, follow=True, )
         self.assertEqual(response.status_code, 200)
         self.comment = Comment.objects.last()
         self.assertEqual(Comment.objects.count(), 1)
         self.assertEqual(self.comment.text, "Test comment")
 
-    def test_non_auth_user_can_comment(self):
+    def test_non_auth_user_cant_comment(self):
         self.author = User.objects.create(
-            username="leo", 
+            username="leo",
             password="123456"
-            )
+        )
         self.post = Post.objects.create(
-            text="Test post!", 
+            text="Test post!",
             author=self.user
-            )
+        )
         response = self.unauthorized_client.post(reverse(
             "add_comment", kwargs={
-                "username": self.user.username, 
+                "username": self.user.username,
                 "post_id": self.post.id
-                }),
+            }),
             data={
-                "text": "Test comment", 
-                "author": self.user.id, 
+                "text": "Test comment",
+                "author": self.user.id,
                 "post": self.post.id
-                })
+        })
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(Comment.objects.count(), 0)                
+        self.assertEqual(Comment.objects.count(), 0)

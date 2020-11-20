@@ -5,6 +5,7 @@ from django.views.decorators.cache import cache_page
 from .forms import CommentForm, PostForm
 from .models import Follow, Group, Post, User
 
+
 @cache_page(20, key_prefix="index_page")
 def index(request):
     post_list = Post.objects.order_by('-pub_date').all()
@@ -13,10 +14,10 @@ def index(request):
     page_number = request.GET.get('page')
     page = paginator.get_page(page_number)
     return render(
-         request,
-         'index.html',
-         {'page': page, 'paginator': paginator}
-     )
+        request,
+        'index.html',
+        {'page': page, 'paginator': paginator}
+    )
 
 
 def group_posts(request, slug):
@@ -30,7 +31,7 @@ def group_posts(request, slug):
         "group": group,
         'page': page,
         'paginator': paginator
-        })
+    })
 
 
 @login_required
@@ -66,7 +67,7 @@ def profile(request, username):
         'count_posts': count_posts,
         'profile': author,
         "following": following}
-                  )
+    )
 
 
 def post_view(request, username, post_id):
@@ -92,31 +93,36 @@ def post_edit(request, username, post_id):
     post = get_object_or_404(Post, pk=post_id, author=profile)
     if request.user != profile:
         return redirect('post', username=username, post_id=post_id)
-    form = PostForm(request.POST or None, files=request.FILES or None, instance=post)
-    
+    form = PostForm(request.POST or None,
+                    files=request.FILES or None, instance=post)
+
     if request.method == 'POST':
         if form.is_valid():
             form.save()
-            return redirect("post_view", username=request.user.username, post_id=post_id)
+            return redirect(
+                "post_view",
+                username=request.user.username,
+                post_id=post_id
+                )
 
     return render(
         request, 'new.html', {'form': form, 'post': post},
-    ) 
+    )
 
 
 def page_not_found(request, exception):
-    # Переменная exception содержит отладочную информацию, 
+    # Переменная exception содержит отладочную информацию,
     # выводить её в шаблон пользователской страницы 404 мы не станем
     return render(
-        request, 
-        "misc/404.html", 
-        {"path": request.path}, 
+        request,
+        "misc/404.html",
+        {"path": request.path},
         status=404
     )
 
 
 def server_error(request):
-    return render(request, "misc/500.html", status=500) 
+    return render(request, "misc/500.html", status=500)
 
 
 @login_required
@@ -130,36 +136,31 @@ def add_comment(request, username, post_id):
     comment.author = request.user
     comment.post = post
     form.save()
-    return redirect("post_view",username,post_id)
-
+    return redirect("post_view", username, post_id)
 
 
 @login_required
 def follow_index(request):
-    author = get_object_or_404(User, username=request.user)
-    follow = author.follower.all()
-    authors = [item.author for item in follow]
-    post_list = Post.objects.filter(author__username__in=authors).all()
-    count_posts = post_list.count()
+    post_list = Post.objects.filter(author__following__user=request.user)
     paginator = Paginator(post_list, 10)
-    page_number = request.GET.get("page")
+    page_number = request.GET.get('page')
     page = paginator.get_page(page_number)
-
-    return render(request, "follow.html",
-                  {"author": author,
-                   "count_posts": count_posts,
-                   "page": page,
-                   "paginator": paginator,
-                   })
+    return render(
+        request,
+        'follow.html',
+        {
+            'page': page,
+            'paginator': paginator
+        }
+    )
 
 
 @login_required
 def profile_follow(request, username):
     author = get_object_or_404(User, username=username)
-    follow = Follow.objects.filter(user=request.user, author=author).exists()
-    if not request.user == author and follow is False:
-        Follow.objects.create(user=request.user, author=author)
-    return redirect("profile", username=username)
+    if request.user != author:
+        Follow.objects.get_or_create(user=request.user, author=author)
+    return redirect('profile', username=username)
 
 
 @login_required
