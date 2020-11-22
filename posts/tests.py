@@ -147,14 +147,14 @@ class BlogTests(TestCase):
 
     def test_index_cache_key(self):
         key = make_template_fragment_key('index_page', [1])
-        self.authorized_client.get('/')
+        self.authorized_client.get('index')
         self.assertTrue(bool(cache.get(key)),
                         'нет данных в кеше под ключом "index_page"')
         cache.clear()
         self.assertFalse(bool(cache.get(key)), 'кеш не очищен')
 
     def test_index_cache(self):
-        response = self.authorized_client.get('/')
+        response = self.authorized_client.get('index')
         self.authorized_client.post(
             '/new/', {'text': 'Тестовый текст кеш поста.'})
         response = self.authorized_client.get('/')
@@ -208,6 +208,12 @@ class BlogTests(TestCase):
         self.assertEqual(follow.author, follower)
         self.assertEqual(follow.user, self.user)
 
+    def test_check_follower_see_followed_post(self):
+        response = self.authorized_client.get('/follow/')
+        self.assertIn(
+            self.text, response.context['page'],
+            "author followed, but their post not appears on /follow/")
+
     def test_check_follow_non_unauth(self):
         follower = User.objects.create_user(
             username="follower",
@@ -230,7 +236,11 @@ class BlogTests(TestCase):
         Follow.objects.create(user=self.user, author=follower)
         self.authorized_client.post(reverse(
             "profile_unfollow", kwargs={"username": follower.username, }))
-        self.assertEqual(follower.following.count(), 0)
+        self.assertFalse(Follow.objects.filter(
+            user=follower,
+            author=self.user
+            ).exists(),
+            "Follow object was not deleted")
 
     def test_check_follower_not_see_followed_post(self):
         response = self.authorized_client.get('/follow/')
