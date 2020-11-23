@@ -4,7 +4,6 @@ from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 from posts.models import Post, Group, Comment, Follow
 from django.urls import reverse
-from urllib.parse import urljoin
 from django.core.cache import cache
 from django.core.cache.utils import make_template_fragment_key
 
@@ -16,17 +15,21 @@ class BlogTests(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.user = User.objects.create_user(username='IvanSushkov')
+        cls.user = User.objects.create(username='IvanSushkov')
+        cls.follower = User.objects.create(
+            username="follower",
+            password="12345"
+        )
         cls.authorized_client = Client()
         cls.authorized_client.force_login(cls.user)
         cls.unauthorized_client = Client()
         cls.group = Group.objects.create(
             title='test group',
             slug='test_group',
-            description='Тестовое описание для тестового поста.'
+            description='Test description for test group.'
         )
-        cls.text = 'Тестовый текст!'
-        cls.edit = 'Измененный тестовый текст!'
+        cls.text = 'Test text!'
+        cls.edit = 'Changed test text!'
 
     def urls(self):
         urls = [
@@ -38,15 +41,15 @@ class BlogTests(TestCase):
         return urls
 
     def test_homepage(self):
-        response = self.client.get('/')
+        response = self.client.get(reverse('index'))
         self.assertEqual(response.status_code, 200)
 
     def test_new_post(self):
         self.client.force_login(self.user)
         current_posts_count = Post.objects.count()
         response = self.client.post(
-            '/new/',
-            {'text': 'Это текст публикации'},
+            reverse('new_post'),
+            {'text': 'Post text'},
             follow=True
         )
         self.assertEqual(response.status_code, 200)
@@ -54,14 +57,14 @@ class BlogTests(TestCase):
 
     def test_force_login(self):
         self.client.force_login(self.user)
-        response = self.client.get('/new/')
+        response = self.client.get(reverse('new_post'))
         self.assertEqual(response.status_code, 200)
 
     def test_unauthorized_user_newpage(self):
-        response = self.client.get('/new/')
+        response = self.client.get(reverse('new_post'))
         self.assertRedirects(
             response,
-            '/auth/login/?next=/new/',
+            '%s?next=%s' % (reverse('login'), reverse('new_post'),),
             status_code=302,
             target_status_code=200
         )
@@ -97,7 +100,7 @@ class BlogTests(TestCase):
             data={'text': self.text, 'group': self.group.id},
             follow=True
         )
-        url = urljoin(reverse('login'), '?next=/new/')
+        url = '%s?next=%s' % (reverse('login'), reverse('new_post'),)
         self.assertRedirects(response, url)
         self.assertEqual(Post.objects.count(), 0)
 
@@ -147,27 +150,27 @@ class BlogTests(TestCase):
 
     def test_index_cache_key(self):
         key = make_template_fragment_key('index_page', [1])
-        self.authorized_client.get('index')
+        self.authorized_client.get(reverse('index'))
         self.assertTrue(bool(cache.get(key)),
-                        'нет данных в кеше под ключом "index_page"')
+                        'no cache under key "index_page"')
         cache.clear()
-        self.assertFalse(bool(cache.get(key)), 'кеш не очищен')
+        self.assertFalse(bool(cache.get(key)), 'cache not cleaned')
 
     def test_index_cache(self):
-        response = self.authorized_client.get('index')
+        response = self.authorized_client.get(reverse('index'))
         self.authorized_client.post(
-            '/new/', {'text': 'Тестовый текст кеш поста.'})
-        response = self.authorized_client.get('/')
+            reverse('new_post'), {'text': 'Test text cached post.'})
+        response = self.authorized_client.get(reverse('index'))
         self.assertNotContains(
             response,
-            'Тестовый текст кеш поста.',
+            'Test text cached post.',
             msg_prefix="index page not cached")
         cache.clear()
-        response = self.authorized_client.get('/')
+        response = self.authorized_client.get(reverse('index'))
         self.assertContains(
             response,
-            'Тестовый текст кеш поста.',
-            msg_prefix="кеш очищен - пост не на главной странице")
+            'Test text cached post.',
+            msg_prefix="post not on index page - cache cleaned")
 
     def test_image_on_pages(self):
         post = Post.objects.create(text="Post with image",
@@ -193,73 +196,63 @@ class BlogTests(TestCase):
     def test_non_image(self):
         with open("posts/urls.py") as file:
             response = self.authorized_client.post(
-                "/new/", {"text": "Some text", "image": file}, follow=True)
+                reverse('new_post'), {
+                    "text": "Some text",
+                    "image": file
+                    }, follow=True)
             self.assertNotContains(response, "test_id")
 
     def test_check_follow_auth(self):
-        follower = User.objects.create_user(
-            username="follower",
-            password="12345"
-        )
         self.authorized_client.post(reverse(
-            "profile_follow", kwargs={"username": follower.username, }))
+            "profile_follow", kwargs={"username": self.follower.username, }))
         follow = Follow.objects.first()
         self.assertEqual(Follow.objects.count(), 1)
-        self.assertEqual(follow.author, follower)
+        self.assertEqual(follow.author, self.follower)
         self.assertEqual(follow.user, self.user)
 
     def test_check_follower_see_followed_post(self):
-        response = self.authorized_client.get('/follow/')
+        response = self.authorized_client.get(reverse(
+            "profile_follow", kwargs={"username": self.follower.username, }))
         self.assertIn(
             self.text, response.context['page'],
             "author followed, but their post not appears on /follow/")
 
     def test_check_follow_non_unauth(self):
-        follower = User.objects.create_user(
-            username="follower",
-            password="12345"
-        )
+
         self.unauthorized_client.post(reverse(
-            "profile_follow", kwargs={"username": follower.username, }))
+            "profile_follow", kwargs={"username": self.follower.username, }))
         self.assertFalse(Follow.objects.filter(
-            user=follower,
+            user=self.follower,
             author=self.user
             ).exists(),
             "Follow object was not deleted")
 
     def test_check_unfollow(self):
 
-        follower = User.objects.create_user(
-            username="follower",
-            password="12345"
-        )
-        Follow.objects.create(user=self.user, author=follower)
+        Follow.objects.create(user=self.user, author=self.follower)
         self.authorized_client.post(reverse(
-            "profile_unfollow", kwargs={"username": follower.username, }))
+            "profile_unfollow", kwargs={"username": self.follower.username, }))
         self.assertFalse(Follow.objects.filter(
-            user=follower,
+            user=self.follower,
             author=self.user
             ).exists(),
             "Follow object was not deleted")
 
     def test_check_follower_not_see_followed_post(self):
-        response = self.authorized_client.get('/follow/')
+        response = self.authorized_client.get(reverse(
+            "profile_follow", kwargs={"username": self.follower.username, }))
         self.assertNotIn(
             self.text, response.context['page'],
             "author not followed, but their post appears on /follow/")
 
     def test_auth_user_can_comment(self):
-        self.author = User.objects.create(
-            username="leo",
-            password="123456"
-        )
         self.post = Post.objects.create(
             text="Test post!",
-            author=self.author
+            author=self.user
         )
         response = self.authorized_client.post(reverse(
             "add_comment", kwargs={
-                "username": self.author,
+                "username": self.user,
                 "post_id": self.post.id
             }),
             data={"text": "Test comment", "author": self.user}, follow=True, )
@@ -269,10 +262,6 @@ class BlogTests(TestCase):
         self.assertEqual(self.comment.text, "Test comment")
 
     def test_non_auth_user_cant_comment(self):
-        self.author = User.objects.create(
-            username="leo",
-            password="123456"
-        )
         self.post = Post.objects.create(
             text="Test post!",
             author=self.user
