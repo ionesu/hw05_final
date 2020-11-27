@@ -52,7 +52,7 @@ All required packages are listed in ```requirements.txt```
 There should be a .env file. which contains passwords, links to the database, logins.
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE.md](https://github.com/ionesu/hw05_final/tree/master/LICENSE) file for details
+This project is licensed under the MIT License - see the [LICENSE.md](https://github.com/ionesu/hw05_final/blob/master/LICENSE.md) file for details
 
 ## Author
 [Ivan Sushkov](https://github.com/ionesu/)
