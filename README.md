@@ -8,21 +8,46 @@ It is possible to moderate posts and block users if they start sending spam.
 Entries can be grouped into communities.
 
 #### Technology stack
-Python 3 Django 2.2, PostgreSQL
+Python 3, Django 2.2, PostgreSQL
 
 #### Technical requirements
-1) All required packages are listed in ```requirements.txt```
+All required packages are listed in ```requirements.txt```
 
-#### Application launch
-1) Install dependencies from ```requirements.txt```:
-    - ```pip install -r requirements.txt```
-2) After all dependencies are installed and complete their initialization, apply all necessary migrations:
-    - ```python manage.py makemigrations```
-    - ```python manage.py migrate```
-3) To access the admin panel, create an admin:
-    - ```python manage.py createsuperuser```
-4) Run the app:
-    - ```python manage.py runserver```
+#### Application install and run
+1. Create virtualenv
+    ```bash
+    virtualenv venv
+    # if virtualenv doesn't exist - pip install virtualenv
+    ```
+2. Activate Virtualenv
+
+    ```bash
+    source venv/bin/activate
+    ```
+3. Install dependencies from ```requirements.txt```:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+4. After all dependencies are installed and complete their initialization, apply all necessary migrations:
+
+    ```bash
+    python manage.py makemigrations
+    ```
+
+    ```bash
+    python manage.py migrate
+    ```
+5. To access the admin panel, create an admin:
+
+    ```bash
+    python manage.py createsuperuser
+    ```
+6. Run the app:
+
+    ```bash
+    python manage.py runserver
+    ```
 #### ATTENTION
 There should be a .env file. which contains passwords, links to the database, logins.
 
